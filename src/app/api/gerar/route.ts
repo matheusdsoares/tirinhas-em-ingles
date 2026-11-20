@@ -73,7 +73,7 @@ const tirinhaJsonSchema = {
 
 export async function POST(request: NextRequest) {
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GeminiKey;
     if (!apiKey) {
       return NextResponse.json(
         { error: "A variável GEMINI_API_KEY não foi configurada na Vercel." },
