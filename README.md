@@ -1,12 +1,11 @@
 # Tirinhas em Inglês
 
-Aplicação educacional com Next.js App Router, TypeScript, Tailwind CSS, OpenAI API e armazenamento local no navegador.
+Aplicação educacional com Next.js App Router, TypeScript, Tailwind CSS, Gemini API e armazenamento local no navegador.
 
 ## Requisitos
 
 - Node.js 20.9+ (recomendado Node.js 22)
-- Chave da OpenAI API: https://platform.openai.com/api-keys
-- A API é cobrada separadamente da assinatura do ChatGPT.
+- Chave gratuita da Gemini API: https://aistudio.google.com/apikey
 
 ## Instalação
 
@@ -24,7 +23,7 @@ Copy-Item .env.example .env.local
 Edite `.env.local` e informe sua chave:
 
 ```env
-OPENAI_API_KEY=sua_chave_real
+GEMINI_API_KEY=sua_chave_real
 ```
 
 Nunca use `NEXT_PUBLIC_` no nome dessa variável. A chave deve permanecer no servidor e nunca deve ser enviada ao navegador ou commitada no Git.
@@ -46,16 +45,21 @@ npm start
 
 ## Publicar na Vercel
 
-1. Em **Settings → Environment Variables**, crie `OPENAI_API_KEY`.
-2. Marque os ambientes nos quais pretende usar o app (Production e Preview; Development se também usar o ambiente local pela Vercel).
+1. Em **Settings → Environment Variables**, crie `GEMINI_API_KEY`.
+2. Marque **Production** (e Preview/Development se também for usar nesses ambientes).
 3. Faça um novo deploy após salvar a variável, pois alterações de variáveis só passam a valer em novos deployments.
 
-## Repetição espaçada
+A aplicação usa `gemini-3.8-flash`, que consta como disponível no nível gratuito da Gemini Developer API na página oficial de preços. O nível gratuito tem limites de uso que podem mudar e a disponibilidade deve ser conferida no painel do Google AI Studio. Não configure faturamento se quiser permanecer no nível gratuito.
 
-A cada geração, o navegador envia até cinco palavras do histórico para `/api/gerar`. A IA tenta reutilizá-las naturalmente e o servidor marca as ocorrências correspondentes. O histórico mantém até quinze palavras únicas.
+## Funcionalidades
 
-## Observações
+- Tirinhas com exatamente quatro quadros em situações cotidianas.
+- Níveis simples (A1-A2) e médio (A2-B1).
+- Tradução contextual palavra por palavra e tradução livre por quadro.
+- Reciclagem de até cinco palavras anteriores em cada nova história.
+- Histórico local de até quinze palavras únicas.
+- Pronúncia usando `window.speechSynthesis`; as vozes disponíveis variam por dispositivo.
 
-- A pronúncia usa `window.speechSynthesis`; as vozes disponíveis variam por dispositivo.
-- Traduções são geradas pela IA e podem exigir ajustes em casos ambíguos.
-- Para evitar abuso de custos em produção pública, considere adicionar rate limiting e autenticação caso o app cresça.
+## Privacidade e limites
+
+No nível gratuito, o Google informa que o conteúdo enviado pode ser usado para melhorar os produtos. Consulte os termos e limites oficiais antes de usar dados pessoais ou conteúdo sensível. O serviço pode retornar erro 429 quando a cota gratuita for atingida.
