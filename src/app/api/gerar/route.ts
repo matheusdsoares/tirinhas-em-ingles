@@ -1,4 +1,3 @@
-import OpenAI from "openai";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -37,50 +36,47 @@ const tirinhaSchema = z.object({
 });
 
 const tirinhaJsonSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: ["cenario", "nivel", "palavras_chave_novas", "quadros"],
+  type: "OBJECT",
   properties: {
-    cenario: { type: "string" },
-    nivel: { type: "string", enum: ["simples", "medio"] },
-    palavras_chave_novas: { type: "array", items: { type: "string" } },
+    cenario: { type: "STRING" },
+    nivel: { type: "STRING", enum: ["simples", "medio"] },
+    palavras_chave_novas: { type: "ARRAY", items: { type: "STRING" } },
     quadros: {
-      type: "array",
+      type: "ARRAY",
       items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["numero", "personagem", "papel", "frase_completa_en", "traducao_livre_pt", "palavras"],
+        type: "OBJECT",
         properties: {
-          numero: { type: "integer" },
-          personagem: { type: "string" },
-          papel: { type: "string", enum: ["personagem_a", "personagem_b"] },
-          frase_completa_en: { type: "string" },
-          traducao_livre_pt: { type: "string" },
+          numero: { type: "INTEGER" },
+          personagem: { type: "STRING" },
+          papel: { type: "STRING", enum: ["personagem_a", "personagem_b"] },
+          frase_completa_en: { type: "STRING" },
+          traducao_livre_pt: { type: "STRING" },
           palavras: {
-            type: "array",
+            type: "ARRAY",
             items: {
-              type: "object",
-              additionalProperties: false,
-              required: ["texto", "traducao", "repetida"],
+              type: "OBJECT",
               properties: {
-                texto: { type: "string" },
-                traducao: { type: "string" },
-                repetida: { type: "boolean" }
-              }
+                texto: { type: "STRING" },
+                traducao: { type: "STRING" },
+                repetida: { type: "BOOLEAN" }
+              },
+              required: ["texto", "traducao", "repetida"]
             }
           }
-        }
+        },
+        required: ["numero", "personagem", "papel", "frase_completa_en", "traducao_livre_pt", "palavras"]
       }
     }
-  }
+  },
+  required: ["cenario", "nivel", "palavras_chave_novas", "quadros"]
 } as const;
 
 export async function POST(request: NextRequest) {
   try {
-    const apiKey = process.env.OPENAI_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
-        { error: "A variável OPENAI_API_KEY não foi configurada no servidor." },
+        { error: "A variável GEMINI_API_KEY não foi configurada na Vercel." },
         { status: 500 }
       );
     }
@@ -104,7 +100,7 @@ export async function POST(request: NextRequest) {
 Use todas essas palavras exatamente como palavras em inglês dentro das falas, de forma natural e contextualizada. Na lista "palavras", marque repetida=true em cada token que corresponda a uma dessas palavras (ignorando maiúsculas/minúsculas e pontuação). Não marque outras palavras como repetidas.`
       : "Ainda não há vocabulário anterior. Marque repetida=false em todas as palavras.";
 
-    const instructions = `Você é um professor de inglês especializado em diálogos cotidianos para falantes brasileiros.
+    const prompt = `Você é um professor de inglês especializado em diálogos cotidianos para falantes brasileiros.
 Crie uma tirinha didática com EXATAMENTE 4 quadros em sequência, com começo, desenvolvimento e conclusão.
 CENÁRIO: ${cenario}.
 NÍVEL: ${nivel}.
@@ -117,46 +113,81 @@ Regras obrigatórias:
 3. "palavras" deve dividir frase_completa_en em tokens na ordem original. Preserve pontuação junto ao token correspondente. Cada token precisa de uma tradução contextual curta em português. Contrações podem permanecer como um token.
 4. A tradução deve refletir o sentido daquela frase, não uma tradução isolada de dicionário. Exemplo: "bill" em restaurante = "conta".
 5. "palavras_chave_novas" deve conter de 3 a 5 palavras úteis presentes nas falas, excluindo as palavras recorrentes enviadas.
-6. Retorne somente os dados no formato JSON solicitado.`;
+6. Retorne somente JSON válido no formato solicitado.`;
 
-    const client = new OpenAI({ apiKey });
-    const response = await client.responses.create({
-      model: "gpt-4.1-mini",
-      instructions,
-      input: "Gere a tirinha agora. Responda em português nas traduções e em inglês americano nas falas.",
-      temperature: 0.75,
-      max_output_tokens: 3000,
-      text: {
-        format: {
-          type: "json_schema",
-          name: "tirinha_ingles",
-          strict: true,
-          schema: tirinhaJsonSchema
-        }
+    const model = "gemini-3.8-flash";
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey
+        },
+        body: JSON.stringify({
+          systemInstruction: {
+            parts: [{ text: "Gere material didático de inglês claro, correto e apropriado ao nível solicitado. As traduções devem ser em português brasileiro." }]
+          },
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.75,
+            maxOutputTokens: 3000,
+            responseMimeType: "application/json",
+            responseJsonSchema: tirinhaJsonSchema
+          }
+        }),
+        signal: AbortSignal.timeout(45000)
       }
-    });
+    );
 
-    if (!response.output_text) {
+    if (!response.ok) {
+      const errorBody = await response.text();
+      console.error("Gemini API error:", response.status, errorBody.slice(0, 1200));
+      if (response.status === 429) {
+        return NextResponse.json(
+          { error: "O limite gratuito do Gemini foi atingido. Aguarde a renovação da cota e tente novamente." },
+          { status: 429 }
+        );
+      }
+      if (response.status === 400 || response.status === 403) {
+        return NextResponse.json(
+          { error: "A chave ou o projeto do Gemini não está autorizado para este modelo. Confira sua chave no Google AI Studio." },
+          { status: response.status }
+        );
+      }
       return NextResponse.json(
-        { error: "A IA não retornou conteúdo. Tente novamente." },
+        { error: "O serviço Gemini está temporariamente indisponível. Tente novamente em instantes." },
+        { status: 502 }
+      );
+    }
+
+    const data = await response.json();
+    const outputText = data.candidates?.[0]?.content?.parts
+      ?.map((part: { text?: string }) => part.text ?? "")
+      .join("")
+      .trim();
+
+    if (!outputText) {
+      return NextResponse.json(
+        { error: "O Gemini não retornou uma tirinha. Tente novamente." },
         { status: 502 }
       );
     }
 
     let json: unknown;
     try {
-      json = JSON.parse(response.output_text);
+      json = JSON.parse(outputText);
     } catch {
-      console.error("OpenAI retornou conteúdo que não pôde ser interpretado como JSON.");
+      console.error("Gemini retornou conteúdo que não pôde ser interpretado como JSON.");
       return NextResponse.json(
-        { error: "Não foi possível interpretar a resposta da IA." },
+        { error: "Não foi possível interpretar a resposta da IA. Tente novamente." },
         { status: 502 }
       );
     }
 
     const validated = tirinhaSchema.safeParse(json);
     if (!validated.success) {
-      console.error("Formato inesperado da OpenAI:", validated.error.flatten());
+      console.error("Formato inesperado do Gemini:", validated.error.flatten());
       return NextResponse.json(
         { error: "A IA retornou uma tirinha fora do formato esperado. Tente novamente." },
         { status: 502 }
@@ -182,7 +213,7 @@ Regras obrigatórias:
 
     return NextResponse.json(normalized);
   } catch (error) {
-    console.error("Erro ao gerar tirinha com OpenAI:", error);
+    console.error("Erro ao gerar tirinha com Gemini:", error);
     return NextResponse.json(
       { error: "Ocorreu um erro ao gerar a tirinha. Verifique sua conexão e tente novamente." },
       { status: 500 }
