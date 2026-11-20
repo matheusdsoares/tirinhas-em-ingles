@@ -115,34 +115,52 @@ Regras obrigatórias:
 5. "palavras_chave_novas" deve conter de 3 a 5 palavras úteis presentes nas falas, excluindo as palavras recorrentes enviadas.
 6. Retorne somente JSON válido no formato solicitado.`;
 
-    const model = "gemini-3.8-flash";
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey
-        },
-        body: JSON.stringify({
-          systemInstruction: {
-            parts: [{ text: "Gere material didático de inglês claro, correto e apropriado ao nível solicitado. As traduções devem ser em português brasileiro." }]
-          },
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.75,
-            maxOutputTokens: 3000,
-            responseMimeType: "application/json",
-            responseJsonSchema: tirinhaJsonSchema
-          }
-        }),
-        signal: AbortSignal.timeout(45000)
+    const models = ["gemini-3.8-flash", "gemini-3.5-flash-lite"];
+    const requestBody = JSON.stringify({
+      systemInstruction: {
+        parts: [{ text: "Gere material didático de inglês claro, correto e apropriado ao nível solicitado. As traduções devem ser em português brasileiro." }]
+      },
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.75,
+        maxOutputTokens: 3000,
+        responseMimeType: "application/json",
+        responseJsonSchema: tirinhaJsonSchema
       }
-    );
+    });
+
+    let response: Response | undefined;
+    let activeModel = models[0];
+    for (const model of models) {
+      activeModel = model;
+      response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey
+          },
+          body: requestBody,
+          signal: AbortSignal.timeout(45000)
+        }
+      );
+
+      // Se o modelo principal estiver indisponível, tenta automaticamente o modelo leve.
+      if (response.ok || ![500, 502, 503, 504].includes(response.status)) break;
+      console.warn(`Gemini model ${model} returned ${response.status}; trying fallback if available.`);
+    }
+
+    if (!response) {
+      return NextResponse.json(
+        { error: "Não foi possível conectar ao serviço de IA. Tente novamente." },
+        { status: 502 }
+      );
+    }
 
     if (!response.ok) {
       const errorBody = await response.text();
-      console.error("Gemini API error:", response.status, errorBody.slice(0, 1200));
+      console.error(`Gemini API error (${activeModel}):`, response.status, errorBody.slice(0, 1200));
       if (response.status === 429) {
         return NextResponse.json(
           { error: "O limite gratuito do Gemini foi atingido. Aguarde a renovação da cota e tente novamente." },
